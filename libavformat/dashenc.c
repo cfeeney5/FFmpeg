@@ -558,7 +558,7 @@ static void write_hls_media_playlist(OutputStream *os, AVFormatContext *s,
         return;
     }
 
-    if (ret_live) < 0) {
+    if (ret_live < 0) {
         handle_io_open_error(s, ret_live, temp_live_filename_hls);
         return;
     } //#
@@ -1451,7 +1451,7 @@ static int write_manifest(AVFormatContext *s, int final)
         if (use_rename)
             if ((ret = ff_rename(temp_filename, filename_hls, s)) < 0 && (ret_live = ff_rename(temp_live_filename, filename_live_hls, s)) < 0)  //#
                 return ret;
-                
+
         c->master_playlist_created = 1;
     }
 
