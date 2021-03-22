@@ -1329,10 +1329,13 @@ static int write_manifest(AVFormatContext *s, int final)
 
         if (*c->dirname)
             snprintf(filename_hls, sizeof(filename_hls), "%s%s", c->dirname, c->hls_master_name);
-            snprintf(filename_live_hls, sizeof(filename_live_hls), "%s%s", c->dirname, c->hls_live_name); //#
-
         else
             snprintf(filename_hls, sizeof(filename_hls), "%s", c->hls_master_name);
+
+        
+        if (*c->dirname)
+            snprintf(filename_live_hls, sizeof(filename_live_hls), "%s%s", c->dirname, c->hls_live_name); 
+        else
             snprintf(filename_live_hls, sizeof(filename_live_hls), "%s", c->hls_live_name); //#
 
         snprintf(temp_filename, sizeof(temp_filename), use_rename ? "%s.tmp" : "%s", filename_hls);
@@ -1362,10 +1365,9 @@ static int write_manifest(AVFormatContext *s, int final)
             if (os->segment_type != SEGMENT_TYPE_MP4)
                 continue;
             get_hls_playlist_name(playlist_file, sizeof(playlist_file), NULL, i);
-            ff_hls_write_audio_rendition(c->m3u8_out, (char *)audio_group,
-                                         playlist_file, NULL, i, is_default);
-            max_audio_bitrate = FFMAX(st->codecpar->bit_rate +
-                                      os->muxer_overhead, max_audio_bitrate);
+            ff_hls_write_audio_rendition(c->m3u8_out, (char *)audio_group,playlist_file, NULL, i, is_default);
+            max_audio_bitrate = FFMAX(st->codecpar->bit_rate +os->muxer_overhead, max_audio_bitrate);
+
             if (!av_strnstr(audio_codec_str, os->codec_str, sizeof(audio_codec_str))) {
                 if (strlen(audio_codec_str))
                     av_strlcat(audio_codec_str, ",", sizeof(audio_codec_str));
@@ -1449,6 +1451,7 @@ static int write_manifest(AVFormatContext *s, int final)
         if (use_rename)
             if ((ret = ff_rename(temp_filename, filename_hls, s)) < 0 && (ret_live = ff_rename(temp_live_filename, filename_live_hls, s)) < 0)  //#
                 return ret;
+                
         c->master_playlist_created = 1;
     }
 
