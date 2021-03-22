@@ -583,7 +583,7 @@ static void write_hls_media_playlist(OutputStream *os, AVFormatContext *s,
                            os->init_range_length, os->init_start_pos); //#
 
     // replay output
-     for (i = start_index; i < os->nb_segments; i++) {
+    for (i = start_index; i < os->nb_segments; i++) {
         Segment *seg = os->segments[i];
 
         if (prog_date_time == 0) {
@@ -629,21 +629,24 @@ static void write_hls_media_playlist(OutputStream *os, AVFormatContext *s,
     } //#
    
 
-    if (prefetch_url)
+    if (prefetch_url){  
         avio_printf(c->m3u8_out, "#EXT-X-PREFETCH:%s\n", prefetch_url);
         avio_printf(c->m3u8_live_out, "#EXT-X-PREFETCH:%s\n", prefetch_url); //#
+    }
 
 
-    if (final)
+    if (final){
         ff_hls_write_end_list(c->m3u8_out);
         ff_hls_write_end_list(c->m3u8_live_out); //#
+    }
 
     dashenc_io_close(s, &c->m3u8_out, temp_filename_hls);
     dashenc_io_close(s, &c->m3u8_live_out, temp_live_filename_hls); //#
 
-    if (use_rename)
+    if (use_rename) {
         ff_rename(temp_filename_hls, filename_hls, os->ctx);
         ff_rename(temp_live_filename_hls, filename_live_hls, os->ctx);
+    }
 }
 
 static int flush_init_segment(AVFormatContext *s, OutputStream *os)
@@ -2094,7 +2097,7 @@ static int dash_flush(AVFormatContext *s, int final, int stream)
     if (c->window_size) {
         for (i = 0; i < s->nb_streams; i++) {
             OutputStream *os = &c->streams[i];
-            int remove_count = os->dx - c->window_size - c->extra_window_size;
+            int remove_count = os->nb_segments - c->window_size - c->extra_window_size;
             if (remove_count > 0)
                 dashenc_delete_media_segments(s, os, remove_count);
         }
