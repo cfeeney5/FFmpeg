@@ -172,11 +172,13 @@ typedef struct DASHContext {
     const char *user_agent;
     AVDictionary *http_opts;
     int hls_playlist;
-    const char *hls_master_name;
+    const char *hls_master_name; //replay master file replay.m3u8
+    const char *hls_live_name; // named master for backward compatibilty master.m3u8 #
     int http_persistent;
     int master_playlist_created;
     AVIOContext *mpd_out;
     AVIOContext *m3u8_out;
+    AVIOContext *m3u8_live_out; //# 
     int streaming;
     int64_t timeout;
     int index_correction;
@@ -495,7 +497,7 @@ static void set_http_options(AVDictionary **options, DASHContext *c)
     if (c->timeout >= 0)
         av_dict_set_int(options, "timeout", c->timeout, 0);
 }
-
+// media hls referencing actual fragments 
 static void get_hls_playlist_name(char *playlist_name, int string_size,
                                   const char *base_url, int id) {
     if (base_url)
@@ -513,17 +515,20 @@ static void get_start_index_number(OutputStream *os, DASHContext *c,
         *start_number = FFMAX(os->segment_index - c->window_size, 1);
     }
 }
-
+// writes hls meida playlist of fragments 
 static void write_hls_media_playlist(OutputStream *os, AVFormatContext *s,
                                      int representation_id, int final,
                                      char *prefetch_url) {
     DASHContext *c = s->priv_data;
     int timescale = os->ctx->streams[0]->time_base.den;
     char temp_filename_hls[1024];
+    char temp_live_filename_hls[1024]; //#
     char filename_hls[1024];
+    char filename_live_hls[1024]; //#
     AVDictionary *http_opts = NULL;
     int target_duration = 0;
     int ret = 0;
+    int ret_live = 0; //#
     const char *proto = avio_find_protocol_name(c->dirname);
     int use_rename = proto && !strcmp(proto, "file");
     int i, start_index, start_number;
@@ -538,15 +543,26 @@ static void write_hls_media_playlist(OutputStream *os, AVFormatContext *s,
     get_hls_playlist_name(filename_hls, sizeof(filename_hls),
                           c->dirname, representation_id);
 
+    get_hls_playlist_name(filename_live_hls, sizeof(filename_live_hls),
+                        c->dirname, representation_id); //#
+
     snprintf(temp_filename_hls, sizeof(temp_filename_hls), use_rename ? "%s.tmp" : "%s", filename_hls);
+    snprintf(temp_live_filename_hls, sizeof(temp_live_filename_hls), use_rename ? "%s.tmp" : "%s", filename_live_hls); //#
 
     set_http_options(&http_opts, c);
     ret = dashenc_io_open(s, &c->m3u8_out, temp_filename_hls, &http_opts);
+    ret_live = dashenc_io_open(s, &c->m3u8_live_out, temp_live_filename_hls, &http_opts);
     av_dict_free(&http_opts);
     if (ret < 0) {
         handle_io_open_error(s, ret, temp_filename_hls);
         return;
     }
+
+    if (ret_live) < 0) {
+        handle_io_open_error(s, ret_live, temp_live_filename_hls);
+        return;
+    } //#
+
     for (i = start_index; i < os->nb_segments; i++) {
         Segment *seg = os->segments[i];
         double duration = (double) seg->duration / timescale;
@@ -556,11 +572,18 @@ static void write_hls_media_playlist(OutputStream *os, AVFormatContext *s,
 
     ff_hls_write_playlist_header(c->m3u8_out, 6, -1, target_duration,
                                  start_number, PLAYLIST_TYPE_NONE, 0);
+    // live output header
+    ff_hls_write_playlist_header(c->m3u8_live_out, 6, -1, target_duration,
+                                 start_number, PLAYLIST_TYPE_NONE, 0); //#
 
     ff_hls_write_init_file(c->m3u8_out, os->initfile, c->single_file,
                            os->init_range_length, os->init_start_pos);
 
-    for (i = start_index; i < os->nb_segments; i++) {
+    ff_hls_write_init_file(c->m3u8_live_out, os->initfile, c->single_file,
+                           os->init_range_length, os->init_start_pos); //#
+
+    // replay output
+     for (i = start_index; i < os->nb_segments; i++) {
         Segment *seg = os->segments[i];
 
         if (prog_date_time == 0) {
@@ -580,17 +603,47 @@ static void write_hls_media_playlist(OutputStream *os, AVFormatContext *s,
             av_log(os->ctx, AV_LOG_WARNING, "ff_hls_write_file_entry get error\n");
         }
     }
+    
+    // live output here so we only write the last 3 most recent segments out to the manifest
+
+    for (i = FFMAX(start_index+(c->window_size -3),0); i < os->nb_segments; i++) {
+        Segment *seg = os->segments[i];
+
+        if (prog_date_time == 0) {
+            if (os->nb_segments == 1)
+                prog_date_time = c->start_time_s;
+            else
+                prog_date_time = seg->prog_date_time;
+        }
+        seg->prog_date_time = prog_date_time;
+
+        ret_live = ff_hls_write_file_entry(c->m3u8_live_out, 0, c->single_file,
+                                (double) seg->duration / timescale, 0,
+                                seg->range_length, seg->start_pos, NULL,
+                                c->single_file ? os->initfile : seg->file,
+                                &prog_date_time, 0, 0, 0);
+        if (ret_live < 0) {
+            av_log(os->ctx, AV_LOG_WARNING, "ff_hls_write_file_entry get error\n");
+        }
+   
+    } //#
+   
 
     if (prefetch_url)
         avio_printf(c->m3u8_out, "#EXT-X-PREFETCH:%s\n", prefetch_url);
+        avio_printf(c->m3u8_live_out, "#EXT-X-PREFETCH:%s\n", prefetch_url); //#
+
 
     if (final)
         ff_hls_write_end_list(c->m3u8_out);
+        ff_hls_write_end_list(c->m3u8_live_out); //#
 
     dashenc_io_close(s, &c->m3u8_out, temp_filename_hls);
+    dashenc_io_close(s, &c->m3u8_live_out, temp_live_filename_hls); //#
 
     if (use_rename)
         ff_rename(temp_filename_hls, filename_hls, os->ctx);
+        ff_rename(temp_live_filename_hls, filename_live_hls, os->ctx);
 }
 
 static int flush_init_segment(AVFormatContext *s, OutputStream *os)
@@ -650,6 +703,7 @@ static void dash_free(AVFormatContext *s)
 
     ff_format_io_close(s, &c->mpd_out);
     ff_format_io_close(s, &c->m3u8_out);
+    ff_format_io_close(s, &c->m3u8_live_out); //#
 }
 
 static void output_segment_list(OutputStream *os, AVIOContext *out, AVFormatContext *s,
@@ -1141,12 +1195,14 @@ end:
     return 0;
 }
 
+// writes the master hls manifest file referencing the media playlist
 static int write_manifest(AVFormatContext *s, int final)
 {
     DASHContext *c = s->priv_data;
     AVIOContext *out;
     char temp_filename[1024];
-    int ret, i;
+    char temp_live_filename[1024]; //used for hls - I dont think its needed in the dash portion ##
+    int ret, ret_live, i; //
     const char *proto = avio_find_protocol_name(s->url);
     int use_rename = proto && !strcmp(proto, "file");
     static unsigned int warned_non_file = 0;
@@ -1257,8 +1313,10 @@ static int write_manifest(AVFormatContext *s, int final)
             return ret;
     }
 
+
     if (c->hls_playlist) {
         char filename_hls[1024];
+        char filename_live_hls[1024]; //#
         const char *audio_group = "A1";
         char audio_codec_str[128] = "\0";
         int is_default = 1;
@@ -1271,19 +1329,29 @@ static int write_manifest(AVFormatContext *s, int final)
 
         if (*c->dirname)
             snprintf(filename_hls, sizeof(filename_hls), "%s%s", c->dirname, c->hls_master_name);
+            snprintf(filename_live_hls, sizeof(filename_live_hls), "%s%s", c->dirname, c->hls_live_name); //#
+
         else
             snprintf(filename_hls, sizeof(filename_hls), "%s", c->hls_master_name);
+            snprintf(filename_live_hls, sizeof(filename_live_hls), "%s", c->hls_live_name); //#
 
         snprintf(temp_filename, sizeof(temp_filename), use_rename ? "%s.tmp" : "%s", filename_hls);
+        snprintf(temp_live_filename, sizeof(temp_live_filename), use_rename ? "%s.tmp" : "%s", filename_live_hls); //#
 
         set_http_options(&opts, c);
         ret = dashenc_io_open(s, &c->m3u8_out, temp_filename, &opts);
+        ret_live = dashenc_io_open(s, &c->m3u8_live_out, temp_live_filename, &opts); //#
         av_dict_free(&opts);
+
         if (ret < 0) {
             return handle_io_open_error(s, ret, temp_filename);
         }
+        if (ret_live < 0) {
+            return handle_io_open_error(s, ret_live, temp_live_filename);
+        } //#
 
         ff_hls_write_playlist_version(c->m3u8_out, 7);
+        ff_hls_write_playlist_version(c->m3u8_live_out, 7); //#
 
         for (i = 0; i < s->nb_streams; i++) {
             char playlist_file[64];
@@ -1306,6 +1374,10 @@ static int write_manifest(AVFormatContext *s, int final)
             is_default = 0;
         }
 
+        // for live playlist without audio we don't need to add codecs to live m3u8 
+
+
+        // main replay list 
         for (i = 0; i < s->nb_streams; i++) {
             char playlist_file[64];
             char codec_str[128];
@@ -1339,9 +1411,43 @@ static int write_manifest(AVFormatContext *s, int final)
                                      playlist_file, agroup,
                                      codec_str_ptr, NULL, NULL);
         }
+
+        // for live removing audio settings
+        for (i = 0; i < s->nb_streams; i++) {
+            char playlist_file[64];
+            char codec_str[128];
+            AVStream *st = s->streams[i];
+            OutputStream *os = &c->streams[i];
+            char *agroup = NULL;
+            char *codec_str_ptr = NULL;
+            int stream_bitrate = os->muxer_overhead;
+            if (os->bit_rate > 0)
+                stream_bitrate += os->bit_rate;
+            else if (final)
+                stream_bitrate += os->pos * 8 * AV_TIME_BASE / c->total_duration;
+            else if (os->first_segment_bit_rate > 0)
+                stream_bitrate += os->first_segment_bit_rate;
+            if (st->codecpar->codec_type != AVMEDIA_TYPE_VIDEO)
+                continue;
+            if (os->segment_type != SEGMENT_TYPE_MP4)
+                continue;
+            av_strlcpy(codec_str, os->codec_str, sizeof(codec_str));
+           
+            if (st->codecpar->codec_id != AV_CODEC_ID_HEVC) {
+                codec_str_ptr = codec_str;
+            }
+            get_hls_playlist_name(playlist_file, sizeof(playlist_file), NULL, i);
+            ff_hls_write_stream_info(st, c->m3u8_live_out, stream_bitrate,
+                                     playlist_file, agroup,
+                                     codec_str_ptr, NULL, NULL);
+        } //#
+
+
         dashenc_io_close(s, &c->m3u8_out, temp_filename);
+        dashenc_io_close(s, &c->m3u8_live_out, temp_live_filename); //#
+
         if (use_rename)
-            if ((ret = ff_rename(temp_filename, filename_hls, s)) < 0)
+            if ((ret = ff_rename(temp_filename, filename_hls, s)) < 0 && (ret_live = ff_rename(temp_live_filename, filename_live_hls, s)) < 0)  //#
                 return ret;
         c->master_playlist_created = 1;
     }
@@ -1981,11 +2087,11 @@ static int dash_flush(AVFormatContext *s, int final, int stream)
 
         os->pos += range_length;
     }
-
+    //loops through media segments and removes if extras 
     if (c->window_size) {
         for (i = 0; i < s->nb_streams; i++) {
             OutputStream *os = &c->streams[i];
-            int remove_count = os->nb_segments - c->window_size - c->extra_window_size;
+            int remove_count = os->dx - c->window_size - c->extra_window_size;
             if (remove_count > 0)
                 dashenc_delete_media_segments(s, os, remove_count);
         }
@@ -2362,7 +2468,8 @@ static const AVOption options[] = {
     { "http_user_agent", "override User-Agent field in HTTP header", OFFSET(user_agent), AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0, E},
     { "http_persistent", "Use persistent HTTP connections", OFFSET(http_persistent), AV_OPT_TYPE_BOOL, {.i64 = 0 }, 0, 1, E },
     { "hls_playlist", "Generate HLS playlist files(master.m3u8, media_%d.m3u8)", OFFSET(hls_playlist), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, E },
-    { "hls_master_name", "HLS master playlist name", OFFSET(hls_master_name), AV_OPT_TYPE_STRING, {.str = "master.m3u8"}, 0, 0, E },
+    { "hls_master_name", "HLS master(replay) playlist name", OFFSET(hls_master_name), AV_OPT_TYPE_STRING, {.str = "replay.m3u8"}, 0, 0, E },
+    { "hls_live_name", "HLS live playlist name", OFFSET(hls_live_name), AV_OPT_TYPE_STRING, {.str = "master.m3u8"}, 0, 0, E },
     { "streaming", "Enable/Disable streaming mode of output. Each frame will be moof fragment", OFFSET(streaming), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, E },
     { "timeout", "set timeout for socket I/O operations", OFFSET(timeout), AV_OPT_TYPE_DURATION, { .i64 = -1 }, -1, INT_MAX, .flags = E },
     { "index_correction", "Enable/Disable segment index correction logic", OFFSET(index_correction), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, E },
