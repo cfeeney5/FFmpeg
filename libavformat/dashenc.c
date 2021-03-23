@@ -581,8 +581,7 @@ static void write_hls_media_playlist(OutputStream *os, AVFormatContext *s,
     ff_hls_write_playlist_header(c->m3u8_out, 6, -1, target_duration,
                                  start_number, PLAYLIST_TYPE_NONE, 0);
     // live output header
-    ff_hls_write_playlist_header(c->m3u8_live_out, 6, -1, target_duration,
-                                 start_number, PLAYLIST_TYPE_NONE, 0); //#
+    ff_hls_write_playlist_header(c->m3u8_live_out, 6, -1, target_duration, FFMAX(os->nb_segments -3,1), PLAYLIST_TYPE_NONE, 0); //#
 
     ff_hls_write_init_file(c->m3u8_out, os->initfile, c->single_file,
                            os->init_range_length, os->init_start_pos);
@@ -614,7 +613,7 @@ static void write_hls_media_playlist(OutputStream *os, AVFormatContext *s,
     
     // live output here so we only write the last 3 most recent segments out to the manifest
 
-    for (i = FFMAX(start_index+(c->window_size -3),0); i < os->nb_segments; i++) {
+    for (i = FFMAX(os->nb_segments -3,0); i < os->nb_segments; i++) {
         Segment *seg = os->segments[i];
 
         if (prog_date_time == 0) {
