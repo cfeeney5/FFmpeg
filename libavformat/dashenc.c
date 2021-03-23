@@ -2432,6 +2432,12 @@ static int dash_write_trailer(AVFormatContext *s)
             snprintf(filename, sizeof(filename), "%s%s", c->dirname, c->hls_master_name);
             dashenc_delete_file(s, filename);
         }
+
+        if (c->hls_playlist && c->master_playlist_created) {
+            char filename[1024];
+            snprintf(filename, sizeof(filename), "%s%s", c->dirname, c->hls_live_name);
+            dashenc_delete_file(s, filename);
+        }
     }
 
     return 0;
