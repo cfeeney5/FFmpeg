@@ -75,6 +75,7 @@ typedef struct Segment {
     int range_length, index_length;
     int64_t time;
     double prog_date_time;
+    double prog_live_date_time;
     int64_t duration;
     int n;
 } Segment;
@@ -541,6 +542,8 @@ static void write_hls_media_playlist(OutputStream *os, AVFormatContext *s,
     int use_rename = proto && !strcmp(proto, "file");
     int i, start_index, start_number;
     double prog_date_time = 0;
+    double prog_live_date_time = 0;
+    int live_window_size = 3;
 
     get_start_index_number(os, c, &start_index, &start_number);
 
@@ -581,7 +584,7 @@ static void write_hls_media_playlist(OutputStream *os, AVFormatContext *s,
     ff_hls_write_playlist_header(c->m3u8_out, 6, -1, target_duration,
                                  start_number, PLAYLIST_TYPE_NONE, 0);
     // live output header
-    ff_hls_write_playlist_header(c->m3u8_live_out, 6, -1, target_duration, FFMAX(os->segment_index -3,1), PLAYLIST_TYPE_NONE, 0); //#
+    ff_hls_write_playlist_header(c->m3u8_live_out, 6, -1, target_duration, FFMAX(os->segment_index -live_window_size,1), PLAYLIST_TYPE_NONE, 0); //#
 
     ff_hls_write_init_file(c->m3u8_out, os->initfile, c->single_file,
                            os->init_range_length, os->init_start_pos);
@@ -613,22 +616,22 @@ static void write_hls_media_playlist(OutputStream *os, AVFormatContext *s,
     
     // live output here so we only write the last 3 most recent segments out to the manifest
 
-    for (i = FFMAX(os->nb_segments -3,0); i < os->nb_segments; i++) {
+    for (i = FFMAX(os->nb_segments -live_window_size,0); i < os->nb_segments; i++) {
         Segment *seg = os->segments[i];
 
-        if (prog_date_time == 0) {
+        if (prog_live_date_time == 0) {
             if (os->nb_segments == 1)
-                prog_date_time = c->start_time_s;
+                prog_live_date_time = c->start_time_s;
             else
-                prog_date_time = seg->prog_date_time;
+                prog_live_date_time = seg->prog_live_date_time;
         }
-        seg->prog_date_time = prog_date_time;
+        seg->prog_live_date_time = prog_live_date_time;
 
         ret_live = ff_hls_write_file_entry(c->m3u8_live_out, 0, c->single_file,
                                 (double) seg->duration / timescale, 0,
                                 seg->range_length, seg->start_pos, NULL,
                                 c->single_file ? os->initfile : seg->file,
-                                &prog_date_time, 0, 0, 0);
+                                &prog_live_date_time, 0, 0, 0);
         if (ret_live < 0) {
             av_log(os->ctx, AV_LOG_WARNING, "ff_hls_write_file_entry get error\n");
         }
