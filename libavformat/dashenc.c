@@ -500,6 +500,16 @@ static void set_http_options(AVDictionary **options, DASHContext *c)
 // media hls referencing actual fragments 
 static void get_hls_playlist_name(char *playlist_name, int string_size,
                                   const char *base_url, int id) {
+    if (live == 1){}
+    if (base_url)
+        snprintf(playlist_name, string_size, "%smedia_replay_%d.m3u8", base_url, id);
+    else
+        snprintf(playlist_name, string_size, "media_replay_%d.m3u8", id);
+}
+
+static void get_hls_live_playlist_name(char *playlist_name, int string_size,
+                                  const char *base_url, int id) {
+    if (live == 1){}
     if (base_url)
         snprintf(playlist_name, string_size, "%smedia_%d.m3u8", base_url, id);
     else
@@ -543,7 +553,7 @@ static void write_hls_media_playlist(OutputStream *os, AVFormatContext *s,
     get_hls_playlist_name(filename_hls, sizeof(filename_hls),
                           c->dirname, representation_id);
 
-    get_hls_playlist_name(filename_live_hls, sizeof(filename_live_hls),
+    get_hls_live_playlist_name(filename_live_hls, sizeof(filename_live_hls),
                         c->dirname, representation_id); //#
 
     snprintf(temp_filename_hls, sizeof(temp_filename_hls), use_rename ? "%s.tmp" : "%s", filename_hls);
@@ -1441,7 +1451,7 @@ static int write_manifest(AVFormatContext *s, int final)
             if (st->codecpar->codec_id != AV_CODEC_ID_HEVC) {
                 codec_str_ptr = codec_str;
             }
-            get_hls_playlist_name(playlist_file, sizeof(playlist_file), NULL, i);
+            get_hls_live_playlist_name(playlist_file, sizeof(playlist_file), NULL, i);
             ff_hls_write_stream_info(st, c->m3u8_live_out, stream_bitrate,
                                      playlist_file, agroup,
                                      codec_str_ptr, NULL, NULL);
@@ -2411,6 +2421,10 @@ static int dash_write_trailer(AVFormatContext *s)
                 char filename[1024];
                 get_hls_playlist_name(filename, sizeof(filename), c->dirname, i);
                 dashenc_delete_file(s, filename);
+
+                get_hls_live_playlist_name(filename, sizeof(filename), c->dirname, i); //#
+                dashenc_delete_file(s, filename); //#
+
             }
         }
         dashenc_delete_file(s, s->url);
