@@ -1459,14 +1459,14 @@ static int write_manifest(AVFormatContext *s, int final)
         dashenc_io_close(s, &c->m3u8_out, temp_filename);
         dashenc_io_close(s, &c->m3u8_live_out, temp_live_filename); //#
 
-        if (use_rename)
-        ret = ff_rename(temp_filename, filename_hls, s);
-        ret_live = ff_rename(temp_live_filename, filename_live_hls, s);
+        if (use_rename){
+            ret = ff_rename(temp_filename, filename_hls, s);
+            ret_live = ff_rename(temp_live_filename, filename_live_hls, s);
 
-        if (ret < 0 && ret_live < 0){
-            return ret && ret_live
+            if (ret < 0 && ret_live < 0){
+                return (ret && ret_live);
+            }
         }
-
 
 
         c->master_playlist_created = 1;
