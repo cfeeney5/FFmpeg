@@ -500,7 +500,6 @@ static void set_http_options(AVDictionary **options, DASHContext *c)
 // media hls referencing actual fragments 
 static void get_hls_playlist_name(char *playlist_name, int string_size,
                                   const char *base_url, int id) {
-    if (live == 1){}
     if (base_url)
         snprintf(playlist_name, string_size, "%smedia_replay_%d.m3u8", base_url, id);
     else
@@ -509,7 +508,6 @@ static void get_hls_playlist_name(char *playlist_name, int string_size,
 
 static void get_hls_live_playlist_name(char *playlist_name, int string_size,
                                   const char *base_url, int id) {
-    if (live == 1){}
     if (base_url)
         snprintf(playlist_name, string_size, "%smedia_%d.m3u8", base_url, id);
     else
