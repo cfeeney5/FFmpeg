@@ -147,6 +147,7 @@ typedef struct DASHContext {
     AdaptationSet *as;
     int nb_as;
     int window_size;
+    int live_window_size;
     int extra_window_size;
 #if FF_API_DASH_MIN_SEG_DURATION
     int min_seg_duration;
@@ -543,7 +544,7 @@ static void write_hls_media_playlist(OutputStream *os, AVFormatContext *s,
     int i, start_index, start_number;
     double prog_date_time = 0;
     double prog_live_date_time = 0;
-    int live_window_size = 3;
+
 
     get_start_index_number(os, c, &start_index, &start_number);
 
@@ -583,8 +584,8 @@ static void write_hls_media_playlist(OutputStream *os, AVFormatContext *s,
 
     ff_hls_write_playlist_header(c->m3u8_out, 6, -1, target_duration,
                                  start_number, PLAYLIST_TYPE_NONE, 0);
-    // live output header
-    ff_hls_write_playlist_header(c->m3u8_live_out, 6, -1, target_duration, FFMAX(os->segment_index -live_window_size,1), PLAYLIST_TYPE_NONE, 0); //#
+    // live output header 
+    ff_hls_write_playlist_header(c->m3u8_live_out, 6, -1, target_duration, FFMAX(os->segment_index - c->live_window_size,1), PLAYLIST_TYPE_NONE, 0); //#
 
     ff_hls_write_init_file(c->m3u8_out, os->initfile, c->single_file,
                            os->init_range_length, os->init_start_pos);
@@ -616,7 +617,7 @@ static void write_hls_media_playlist(OutputStream *os, AVFormatContext *s,
     
     // live output here so we only write the last 3 most recent segments out to the manifest
 
-    for (i = FFMAX(os->nb_segments -live_window_size,0); i < os->nb_segments; i++) {
+    for (i = FFMAX(os->nb_segments -c->live_window_size,0); i < os->nb_segments; i++) {
         Segment *seg = os->segments[i];
 
         if (prog_live_date_time == 0) {
@@ -2475,6 +2476,7 @@ static int dash_check_bitstream(struct AVFormatContext *s, const AVPacket *avpkt
 static const AVOption options[] = {
     { "adaptation_sets", "Adaptation sets. Syntax: id=0,streams=0,1,2 id=1,streams=3,4 and so on", OFFSET(adaptation_sets), AV_OPT_TYPE_STRING, { 0 }, 0, 0, AV_OPT_FLAG_ENCODING_PARAM },
     { "window_size", "number of segments kept in the manifest", OFFSET(window_size), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, E },
+    { "live_window_size", "number of segments kept in the live manifest", OFFSET(live_window_size), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, E },
     { "extra_window_size", "number of segments kept outside of the manifest before removing from disk", OFFSET(extra_window_size), AV_OPT_TYPE_INT, { .i64 = 5 }, 0, INT_MAX, E },
 #if FF_API_DASH_MIN_SEG_DURATION
     { "min_seg_duration", "minimum segment duration (in microseconds) (will be deprecated)", OFFSET(min_seg_duration), AV_OPT_TYPE_INT, { .i64 = 5000000 }, 0, INT_MAX, E },
