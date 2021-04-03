@@ -252,6 +252,8 @@ Set the type of interval for fragmentation.
 Set the maximum number of segments kept in the manifest.
 @item extra_window_size @var{size}
 Set the maximum number of segments kept outside of the manifest before removing from disk.
+@item live_window_size @var{size}
+Set the maximum number of live segments for the master manifest.
 @item remove_at_exit @var{remove}
 Enable (1) or disable (0) removal of all segments when finished.
 @item use_template @var{template}
